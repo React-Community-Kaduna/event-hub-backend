@@ -14,6 +14,8 @@ import {
   updateUserRole,
   searchUser,
   registeredEvents,
+  googleLogin,
+  googleLoginResponse,
 } from "../controllers/userController.js";
 
 //TODO - import { requireSignIn } from "../helpers/authHelpers.js";
@@ -37,5 +39,7 @@ router
 router.get("/logout", logout);
 router.get("/me/search", searchUser);
 router.get("/events", registeredEvents);
+router.get("/auth/google", googleLogin);
+router.get("/auth/google/callback", googleLoginResponse);
 
 export default router;

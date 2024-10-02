@@ -11,6 +11,7 @@ import {
 import { validatePassword, validEmail } from "../utils/password.js";
 import crypto from "crypto";
 import eventModel from "../models/eventModel.js";
+import axios from "axios";
 
 const currentDate = new Date().toLocaleString();
 const helpEmail = process.env.EMAIL_USER;
@@ -173,6 +174,39 @@ const login = catchAsync(async (req, res, next) => {
             });*/
   } catch (error) {
     return next(new HttpError("Unable to login, try again", 500));
+  }
+});
+
+const googleLogin = catchAsync(async (req, res) => {
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${process.env.CALLBACK_URL}&response_type=code&scope=profile email`;
+  res.redirect(url);
+});
+
+const googleLoginResponse = catchAsync(async (req, res) => {
+  const { code } = req.query;
+
+  try {
+    // Exchange authorization code for access token
+    const { data } = await axios.post('https://oauth2.googleapis.com/token', {
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      code,
+      redirect_uri: process.env.CALLBACK_URL,
+      grant_type: 'authorization_code',
+    });
+
+    const { access_token, id_token } = data;
+
+    // Use access_token or id_token to fetch user profile
+    const { data: profile } = await axios.get('https://www.googleapis.com/oauth2/v1/userinfo', {
+      headers: { Authorization: `Bearer ${access_token}` },
+    });
+
+    // Code to handle user authentication and retrieval using the profile data
+    res.redirect('/');
+  } catch (error) {
+    console.error('Error:', error.response.data.error);
+    res.redirect('/login');
   }
 });
 
@@ -470,4 +504,6 @@ export {
   updateUserRole,
   searchUser,
   registeredEvents,
+  googleLogin,
+  googleLoginResponse
 };
