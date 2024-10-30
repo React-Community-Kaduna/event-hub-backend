@@ -13,10 +13,10 @@ const EventShema = mongoose.Schema({
   status: {
     type: String,
   },
-
+// TODO - Fix image upload and make image upload compulsory 
   imageUrl: {
     type: String,
-    required: true,
+   // required: true,
   },
   imagePublicId: String,
   area: {
