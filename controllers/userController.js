@@ -11,9 +11,27 @@ import {
 import { validatePassword, validEmail } from "../utils/password.js";
 import crypto from "crypto";
 import eventModel from "../models/eventModel.js";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { v2 as cloudinary } from "cloudinary";
+import validator from "validator";
 
 const currentDate = new Date().toLocaleString();
 const helpEmail = process.env.EMAIL_USER;
+
+cloudinary.config({
+  cloud_name: process.env.cloud_name,
+  api_key: process.env.api_key,
+  api_secret: process.env.api_secret,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "uploads",
+    resource_type: "auto",
+    allowed_formats: ["jpg", "png"],
+  },
+});
 
 const signUp = catchAsync(async (req, res, next) => {
   try {
@@ -32,13 +50,16 @@ const signUp = catchAsync(async (req, res, next) => {
       return next(new HttpError("Fullname cannot be empty!", 400));
     }
 
-    // if (!github || github.trim().length === 0) {
-    //   return next(new HttpError("Github url cannot be empty!", 400));
-    // }
+    // Validate GitHub URL (optional)
 
-    // if (!contact || contact.trim().length === 0) {
-    //   return next(new HttpError("Contact cannot be empty!", 400));
-    // }
+    if (github && !validator.isURL(github)) {
+      return next(new HttpError("Invalid GitHub URL format.", 400));
+    }
+
+    // Validate Contact (optional) - Let's assume it's a phone number or email
+    if (contact && !validator.isMobilePhone(contact) && !validator.isEmail(contact)) {
+      return next(new HttpError("Invalid contact format. It should be a valid phone number or email.", 400));
+    }
 
     if (password !== confirmPassword) {
       return res.status(400).json({
@@ -67,11 +88,21 @@ const signUp = catchAsync(async (req, res, next) => {
 
     const passwordHash = await createHashedPassword(password);
 
+    let avatarUrl = null;
+    let avatarPublicId = null;
+
+    if (req.file) {
+      const result = await cloudinary.uploader.upload(req.file.path);
+      avatarUrl = result.secure_url;
+      avatarPublicId = result.public_id;
+    }
+
     const newUser = await User.create({
       fullName,
       email,
       password: passwordHash,
-
+      avatar: avatarUrl,
+      avatarPublicId: avatarPublicId,
       ...others,
     });
 
@@ -86,29 +117,7 @@ const signUp = catchAsync(async (req, res, next) => {
       return next(new HttpError("Message not sent Successfully", 500));
     }
 
-    /*const token = await generateToken(newUser._id, newUser.email);
-        console.log(token);*/
-
     sendToken(newUser, 200, res);
-    /*res.status(200)
-            .cookie("token", token)
-            .json({
-                success: true,
-                message: "User Created Successfully",
-                token,
-                user: {
-                    userId: newUser._id,
-                    fullName: newUser.fullName,
-                    email: newUser.email,
-                    role: newUser.role,
-                    bio: newUser.bio,
-                    avatar: newUser.avatar,
-                    specialty: newUser.specialty,
-                    interests: newUser.interests,
-                    github: newUser.github,
-                    portfolio: newUser.portfolio,
-                }
-            });*/
   } catch (error) {
     console.error("Error creating user:", error);
     return next(new HttpError("Unable to create user, try again.", 500));
@@ -156,27 +165,6 @@ const login = catchAsync(async (req, res, next) => {
     /*const token = await generateToken(existingUser._id);*/
 
     sendToken(existingUser1, 200, res);
-    /*res.status(201)
-            .cookie("token", token , {
-                httpOnly: true
-            })
-            .json({
-                success: true,
-                message: "User Login Successful",
-                token,
-                user: {
-                    userId: existingUser._id,
-                    fullName: existingUser.fullName,
-                    email: existingUser.email,
-                    role: existingUser.role,
-                    bio: existingUser.bio,
-                    avatar: existingUser.avatar,
-                    specialty: existingUser.specialty,
-                    interests: existingUser.interests,
-                    github: existingUser.github,
-                    portfolio: existingUser.portfolio
-                }
-            });*/
   } catch (error) {
     return next(new HttpError("Unable to login, try again", 500));
   }
@@ -302,14 +290,38 @@ const resetPassword = catchAsync(async (req, res, next) => {
 
 const updateUser = catchAsync(async (req, res, next) => {
   try {
+    const existingUser = await User.findById(req.user.id);
+    if (!existingUser) {
+      return next(new HttpError("User not found", 404));
+    }
+
     const newUserData = {
       ...req.body,
     };
+
+    // Handle avatar upload if a new file is provided
+    if (req.file) {
+      try {
+        // Delete the old avatar from Cloudinary if it exists
+        if (existingUser.avatarPublicId) {
+          await cloudinary.uploader.destroy(existingUser.avatarPublicId);
+        }
+
+        // Upload new avatar
+        const result = await cloudinary.uploader.upload(req.file.path);
+        newUserData.avatar = result.secure_url;
+        newUserData.avatarPublicId = result.public_id;
+      } catch (error) {
+        console.error("Error handling avatar:", error);
+        return next(new HttpError("Error updating avatar", 500));
+      }
+    }
     // TODO - req.user.id = req.user.userId
     const user = await User.findByIdAndUpdate(req.user.id, newUserData, {
       new: true,
       runValidators: true,
     });
+
     res.status(200).json({
       success: true,
       message: "User Updated Successfully.",
